@@ -1,59 +1,110 @@
 # Binance Futures Testnet Trading Bot
 
-A structured Python CLI application for placing orders on **Binance Futures Testnet (USDT-M)**, with input validation, structured logging, and clean error handling.
+A modular, production-style Python CLI application for placing **MARKET**, **LIMIT**, and **STOP_LIMIT** orders on **Binance Futures Testnet (USDT-M)** with input validation, structured logging, comprehensive error handling, and clean separation of concerns.
+
+Built as a technical assessment submission — demonstrating clean architecture, defensive programming, and real-world API integration.
+
+---
 
 ## Features
 
-- Place **MARKET**, **LIMIT**, and **STOP_LIMIT** orders (bonus third order type)
-- Support for both **BUY** and **SELL** sides
-- Command-line interface with clear help messages
+- MARKET, LIMIT, and STOP_LIMIT order placement
+- BUY and SELL support
+- CLI-based input with argparse
 - Input validation before any network call
-- Structured logging to file with rotation
-- Clean separation between API layer and CLI layer
-- Proper error handling with user-friendly messages
+- Structured logging with file rotation and secret redaction
+- Custom exception hierarchy (ValidationError, BinanceAPIError, BinanceNetworkError)
+- 45 unit tests covering all validation logic
+- Secrets managed via `.env` — never hardcoded
+
+---
 
 ## Project Structure
 
 ```
 trading_bot/
 ├── bot/
-│   ├── __init__.py
-│   ├── client.py          # Binance Futures Testnet client wrapper
-│   ├── orders.py          # Order param building + placement logic
-│   ├── validators.py      # Input validation
-│   └── logging_config.py  # Logging configuration
+│   ├── __init__.py          # Package marker
+│   ├── client.py            # Signed REST client for Binance Futures Testnet
+│   ├── orders.py            # Order param building, placement, and result formatting
+│   ├── validators.py        # Input validation with custom exceptions
+│   └── logging_config.py    # Logging setup with rotation and secret redaction
 ├── tests/
 │   ├── __init__.py
-│   └── test_validators.py # Offline unit tests
-├── logs/                  # Auto-created, contains trading_bot.log
-├── cli.py                 # CLI entry point
-├── requirements.txt
-├── .env.example
+│   └── test_validators.py   # 45 unit tests (offline, no API keys needed)
+├── logs/                    # Log files auto-created here
+├── cli.py                   # CLI entry point (argparse)
+├── .env.example             # Template for credentials
 ├── .gitignore
+├── requirements.txt
 └── README.md
 ```
 
-## Setup Instructions
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                     CLI Layer                       │
+│                  cli.py (argparse)                  │
+│        parses args → calls validate → places order │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│                 Validation Layer                     │
+│              validators.py                           │
+│    validate_all() → symbol, side, type, qty, price  │
+│    Raises ValidationError if anything is invalid    │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│                  Business Logic                      │
+│               orders.py (OrderManager)               │
+│    place_order() → builds params, calls client,     │
+│    returns OrderResult dataclass                    │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│                 API Client Layer                     │
+│               client.py (BinanceClient)               │
+│    Handles HMAC signing, HTTP communication,         │
+│    error mapping (API errors vs network errors)      │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│         Binance Futures Testnet API                  │
+│         https://testnet.binancefuture.com            │
+│         Endpoint: POST /fapi/v1/order               │
+└─────────────────────────────────────────────────────┘
+```
+
+**Key design principle:** Each layer has a single responsibility and can be tested independently. The CLI never talks directly to the API; the validator never makes network calls.
+
+---
+
+## Setup
 
 ### 1. Register on Binance Futures Testnet
 
 1. Visit [https://testnet.binancefuture.com](https://testnet.binancefuture.com)
-2. Log in with your Binance account (or create one)
-3. Navigate to API Management
-4. Generate new API Key and Secret
-5. Copy and save both credentials securely
+2. Log in with your Binance account
+3. Go to **API Management** → **Create API** → choose **System generated**
+4. Copy your **API Key** and **Secret Key**
 
 ### 2. Clone and Install
 
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-cd trading_bot
+git clone https://github.com/CodeByAlok24/binance-futures-trading-bot.git
+cd binance-futures-trading-bot
 
-# Create virtual environment
+# Create and activate virtual environment
 python -m venv venv
 
-# Activate virtual environment
 # Windows:
 venv\Scripts\activate
 # macOS/Linux:
@@ -63,20 +114,51 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Configure Credentials
+### 3. Add Credentials
 
 ```bash
-# Copy the example env file
 cp .env.example .env
-
-# Edit .env and add your testnet API credentials
-BINANCE_TESTNET_API_KEY=your_api_key_here
-BINANCE_TESTNET_API_SECRET=your_api_secret_here
 ```
 
-**Important:** Never commit your `.env` file to version control.
+Edit `.env` and add your testnet credentials:
 
-## Usage
+```
+BINANCE_TESTNET_API_KEY=your_key_here
+BINANCE_TESTNET_API_SECRET=your_secret_here
+```
+
+> **Security:** The `.env` file is excluded from version control via `.gitignore`. Your keys are never logged — a `SecretRedactor` filter automatically redacts them from all log output.
+
+---
+
+## CLI Reference
+
+```
+usage: cli.py [-h] --symbol SYMBOL --side {BUY,SELL} --type
+              {MARKET,LIMIT,STOP_LIMIT} --quantity QUANTITY
+              [--price PRICE] [--stop-price STOP_PRICE]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--symbol` | Yes | Trading pair (e.g., `BTCUSDT`, `ETHUSDT`) |
+| `--side` | Yes | `BUY` or `SELL` |
+| `--type` | Yes | `MARKET`, `LIMIT`, or `STOP_LIMIT` |
+| `--quantity` | Yes | Order quantity (must be > 0) |
+| `--price` | For LIMIT/STOP_LIMIT | Limit price |
+| `--stop-price` | For STOP_LIMIT | Stop trigger price |
+
+### Quick Help
+
+```bash
+python cli.py --help
+```
+
+---
+
+## Usage Examples
 
 ### Market Order
 
@@ -84,7 +166,7 @@ BINANCE_TESTNET_API_SECRET=your_api_secret_here
 python cli.py --symbol BTCUSDT --side BUY --type MARKET --quantity 0.001
 ```
 
-**Expected Output:**
+**Actual output from test run:**
 
 ```
 ==================================================
@@ -99,12 +181,12 @@ ORDER REQUEST SUMMARY
 --------------------------------------------------
 ORDER RESPONSE
 --------------------------------------------------
-  Order ID:           123456
-  Status:             FILLED
-  Executed Quantity:  0.001
-  Average Price:      62000.00
+  Order ID:           23511918268
+  Status:             NEW
+  Executed Quantity:  0.0000
+  Average Price:      N/A
 --------------------------------------------------
-  ✓ ORDER PLACED SUCCESSFULLY
+  [SUCCESS] ORDER PLACED SUCCESSFULLY
 --------------------------------------------------
 ```
 
@@ -114,89 +196,158 @@ ORDER RESPONSE
 python cli.py --symbol BTCUSDT --side SELL --type LIMIT --quantity 0.001 --price 70000
 ```
 
-### Stop-Limit Order (Bonus Feature)
+**Actual output from test run:**
 
-```bash
-python cli.py --symbol BTCUSDT --side BUY --type STOP_LIMIT --quantity 0.001 --price 60000 --stop-price 59500
+```
+==================================================
+ORDER REQUEST SUMMARY
+==================================================
+  Symbol:     BTCUSDT
+  Side:       SELL
+  Type:       LIMIT
+  Quantity:   0.001
+  Price:      70000.0
+==================================================
+
+--------------------------------------------------
+ORDER RESPONSE
+--------------------------------------------------
+  Order ID:           23511938081
+  Status:             NEW
+  Executed Quantity:  0.0000
+  Average Price:      N/A
+--------------------------------------------------
+  [SUCCESS] ORDER PLACED SUCCESSFULLY
+--------------------------------------------------
 ```
 
-### CLI Arguments
+### Stop-Limit Order
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--symbol` | Yes | Trading pair (e.g., BTCUSDT) |
-| `--side` | Yes | Order side: BUY or SELL |
-| `--type` | Yes | Order type: MARKET, LIMIT, or STOP_LIMIT |
-| `--quantity` | Yes | Order quantity (must be > 0) |
-| `--price` | For LIMIT/STOP_LIMIT | Limit price |
-| `--stop-price` | For STOP_LIMIT | Stop trigger price |
+```bash
+python cli.py --symbol BTCUSDT --side SELL --type STOP_LIMIT --quantity 0.001 --price 117000 --stop-price 118000
+```
+
+---
 
 ## Running Tests
 
 ```bash
-pytest tests/ -v
+python -m pytest tests/ -v
 ```
 
-Tests validate input handling offline without network access or API keys.
+45 tests covering all validation logic — runs offline, no API keys needed.
+
+```
+tests/test_validators.py::TestValidateSymbol::test_valid_symbol PASSED
+tests/test_validators.py::TestValidateSymbol::test_lowercase_converted PASSED
+...
+tests/test_validators.py::TestValidateAll::test_valid_market_order PASSED
+tests/test_validators.py::TestValidateAll::test_valid_limit_order PASSED
+tests/test_validators.py::TestValidateAll::test_valid_stop_limit_order PASSED
+
+============================= 45 passed in 0.10s ==============================
+```
+
+---
 
 ## Logging
 
-All API requests, responses, and errors are logged to `logs/trading_bot.log`:
+Logs are written to `logs/trading_bot.log` with automatic rotation (2MB, 3 backups).
 
-- **Console output:** INFO level (concise)
-- **File output:** DEBUG level (detailed, with API secret redaction)
-- **Log rotation:** 2MB max size, 3 backup files
+| Channel | Level | Detail |
+|---------|-------|--------|
+| Console | INFO | Key lifecycle events (order placed, error summary) |
+| File | DEBUG | Full request params, raw API responses, stack traces |
 
-**Sample log entries:**
+### Sample log file
 
 ```
-2026-07-23 12:30:15 | INFO     | bot.client:85 | Placing MARKET order: BUY 0.001 BTCUSDT
-2026-07-23 12:30:16 | INFO     | bot.client:90 | Order placed successfully - ID: 123456, Status: FILLED
+2026-07-23 14:15:28 | INFO     | bot.client:60  | Binance Futures Testnet client initialized successfully.
+2026-07-23 14:15:28 | DEBUG    | bot.client:108 | Order request params: {'symbol': 'BTCUSDT', 'side': 'BUY', 'type': 'MARKET', 'quantity': 0.001}
+2026-07-23 14:15:28 | INFO     | bot.client:111 | Placing MARKET order: BUY 0.001 BTCUSDT
+2026-07-23 14:15:29 | DEBUG    | bot.client:119 | Order response: {'orderId': 23511918268, 'status': 'NEW', 'executedQty': '0.0000', ...}
+2026-07-23 14:15:29 | INFO     | bot.client:120 | Order placed successfully - ID: 23511918268, Status: NEW
+2026-07-23 14:15:40 | INFO     | bot.client:60  | Binance Futures Testnet client initialized successfully.
+2026-07-23 14:15:40 | INFO     | bot.client:111 | Placing LIMIT order: SELL 0.001 BTCUSDT @ 70000.0
+2026-07-23 14:15:41 | INFO     | bot.client:120 | Order placed successfully - ID: 23511938081, Status: NEW
+2026-07-23 14:15:55 | INFO     | bot.client:111 | Placing STOP order: BUY 0.001 BTCUSDT @ 60000.0 (stop: 59500.0)
+2026-07-23 14:15:56 | ERROR    | bot.client:128 | Binance API error: Status=400, Code=-2021, Message=Order would immediately trigger.
 ```
+
+> API keys and secrets are automatically redacted from log output by the `SecretRedactor` filter.
+
+---
 
 ## Error Handling
 
-The application handles three types of errors:
+The application distinguishes between three failure modes:
 
-1. **Validation Errors** - Invalid input (bad symbol, missing price, negative quantity)
-2. **Binance API Errors** - API rejections (insufficient balance, invalid symbol)
-3. **Network Errors** - Connectivity issues (timeout, DNS failure)
+| Error Type | Example | When It Happens |
+|-----------|---------|----------------|
+| `ValidationError` | Invalid symbol, missing price, negative quantity | Before any API call |
+| `BinanceAPIError` | Insufficient balance, invalid symbol, bad price | API rejects the order |
+| `BinanceNetworkError` | Timeout, DNS failure, connection refused | Network issues |
 
-All errors are printed to console and logged to file.
-
-## Architecture
+**Sample error output:**
 
 ```
-CLI (cli.py)
-    ↓
-Validators (validators.py)  →  Validate BEFORE any network call
-    ↓
-OrderManager (orders.py)    →  Build order params, format output
-    ↓
-BinanceClient (client.py)   →  API communication, error handling
-    ↓
-Binance Futures Testnet API
+# Validation error:
+  [ERROR] Validation Error: Invalid symbol format: 'BTC'. Symbol must end with USDT (e.g., BTCUSDT, ETHUSDT).
+
+# Missing argument:
+  [ERROR] Validation Error: Price is required for LIMIT and STOP_LIMIT orders.
+
+# API error:
+  [ERROR] Error: API Error [-2021]: Order would immediately trigger.
 ```
+
+---
 
 ## Design Decisions
 
-- **`python-binance` library:** Used for its built-in `testnet=True` support and automatic HMAC signing
-- **Input validation first:** All validation happens before any network call to avoid unnecessary API requests
-- **Structured results:** `OrderResult` dataclass provides consistent output regardless of success/failure
-- **Secret redaction:** API keys and secrets are automatically redacted in log files
-- **No auto-retry:** Order placement failures are reported immediately (retrying could cause duplicate orders)
+| Decision | Rationale |
+|----------|-----------|
+| **python-binance** over raw HTTP | Built-in `testnet=True` param, automatic HMAC signing, mature library |
+| **argparse** over Click/Typer | Zero external dependencies for the CLI; sufficient for the requirements |
+| **`STOP` order type** for Stop-Limit | Binance Futures API uses `STOP` type with `stopPrice` field; `STOP_LIMIT` doesn't exist on Futures |
+| **Validation-first pattern** | All input validated before any network call — never send a bad request to the API |
+| **No auto-retry on failure** | Retrying order placement risks duplicate orders; report once and let the user decide |
+| **dataclass for results** | `OrderResult` provides a consistent contract between `orders.py` and `cli.py` |
+| **Secret redaction in logs** | `SecretRedactor` filter on both handlers prevents credential leakage in log files |
+
+---
 
 ## Assumptions
 
-- Only USDT-M Futures Testnet is targeted (`/fapi/v1/*` endpoints)
-- Orders use default account settings (no leverage/margin-type changes)
-- `recvWindow` is 5000ms; system clock is reasonably synced
+- Targets **USDT-M Futures Testnet** only (`/fapi/v1/*` endpoints)
+- Default account leverage/margin settings are acceptable
+- `recvWindow` default of 5000ms; system clock is reasonably synced
 - Sufficient test balance is available in the testnet account
-- Testnet resets approximately once per month
+- Testnet data is periodically reset (roughly once per month)
+
+---
 
 ## Requirements
 
 - Python 3.7+
 - `python-binance>=1.0.20`
 - `python-dotenv>=1.0.0`
-- `pytest>=7.0.0` (for running tests)
+- `pytest>=7.0.0` (development / testing only)
+
+---
+
+## Deliverables Checklist
+
+| Required Item | Status |
+|---------------|--------|
+| MARKET order log | ✅ Included (`logs/trading_bot.log`) |
+| LIMIT order log | ✅ Included (`logs/trading_bot.log`) |
+| Source code (structured) | ✅ 4-layer architecture |
+| README with setup | ✅ This file |
+| requirements.txt | ✅ Included |
+| Bonus: STOP_LIMIT order | ✅ Implemented |
+| Bonus: Comprehensive tests | ✅ 45 unit tests |
+
+---
+
+*Built for the Primetrade.ai Python Developer Application Task.*
