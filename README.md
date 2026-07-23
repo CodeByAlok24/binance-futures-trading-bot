@@ -19,6 +19,16 @@ Built as a technical assessment submission — demonstrating clean architecture,
 
 ---
 
+## Screenshots
+
+### Market Order
+![Market Order Output](images/market_order.png)
+
+### Limit Order
+![Limit Order Output](images/limit_order.png)
+
+---
+
 ## Project Structure
 
 ```
