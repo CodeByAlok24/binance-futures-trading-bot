@@ -20,12 +20,7 @@ Built as a technical assessment submission — demonstrating clean architecture,
 ---
 
 ## Screenshots
-
-### Market Order
-![Market Order Output](images/market_order.png)
-
-### Limit Order
-![Limit Order Output](images/limit_order.png)
+<img width="880" height="407" alt="Screenshot 2026-07-23 163521" src="https://github.com/user-attachments/assets/49fa70e1-40f0-4015-a5ce-ebd4828bba25" />
 
 ---
 
